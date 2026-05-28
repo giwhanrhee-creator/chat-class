@@ -15,11 +15,10 @@ os.environ["PYTHONHTTPSVERIFY"] = "0"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==========================================
-# 2. [★수업용 핵심] 선생님의 API 키 미리 설정하기
+# 2. [보안 적용] 스트림릿 시스템 내부 금고(Secrets)에서 API 키 읽어오기
 # ==========================================
-# 여기에 구글 AI 스튜디오에서 받은 Key를 넣어두면 학생들이 키를 입력 안 해도 됩니다.
-# (나중에 인터넷에 실제로 배포할 때는 다른 안전한 곳으로 숨길 수 있습니다)
-TEACHER_API_KEY = "AIzaSyBo3bV3KJESRqrjGcbtAp8mO3w6h844T_E" 
+# 소스코드에 키를 직접 적지 않으므로 깃허브에 공개되어도 완벽하게 안전합니다.
+TEACHER_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 # ==========================================
 # 3. 앱 페이지 설정 및 디자인
@@ -86,7 +85,7 @@ for msg in st.session_state.messages:
         st.write(msg["content"])
 
 # ==========================================
-# 6. [★수업용 핵심] 학생들이 쉽게 누를 수 있는 고민 예시 버튼
+# 6. 학생들이 쉽게 누를 수 있는 고민 예시 버튼
 # ==========================================
 st.markdown("⬇️ **어떤 말을 해야 할지 모르겠다면 아래 고민을 눌러보세요!**")
 btn_col1, btn_col2, btn_col3 = st.columns(3)
@@ -107,23 +106,23 @@ with btn_col3:
 # ==========================================
 user_input = st.chat_input("공자 스승님께 여쭐 고민을 적어보세요...")
 
-# 예시 버튼을 눌렀다면 해당 텍스트를 입력값으로 취급
 if preset_query:
     user_input = preset_query
 
 if user_input:
-    # 1. 화면에 제자의 고민 표시
     with st.chat_message("user"):
         st.write(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
-    # 2. 공자의 답변 생성
     with st.chat_message("assistant"):
-        with st.spinner("공자 스승님이 논어 구절을 살펴보며 생각 중이십니다..."):
-            try:
-                referenced_context = find_relevant_context(user_input, 논어_지식고)
-                
-                confucius_prompt = f"""
+        # 실시간 스트리밍을 보여줄 비어있는 상자 먼저 생성
+        message_placeholder = st.empty()
+        full_response = ""
+        
+        try:
+            referenced_context = find_relevant_context(user_input, 논어_지식고)
+            
+            confucius_prompt = f"""
 너는 유교의 창시자 '공자(孔子)'이다. 사용자는 가르침을 구하는 중학교 제자(청소년)이다.
 [대화 규칙]
 1. 말투: 매우 정중하고, 온화하며, 자애로운 스승의 어조(~이지요, ~해보는 것은 어떻겠습니까?, 대견합니다)를 쓴다.
@@ -134,26 +133,39 @@ if user_input:
 [참고 논어 구절]
 {referenced_context}
 """
+            
+            # 실시간 스트리밍 통신용 구글 서버 주소
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={TEACHER_API_KEY}"
+            
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [{"parts": [{"text": user_input}]}],
+                "systemInstruction": {"parts": [{"text": confucius_prompt}]},
+                "generationConfig": {"temperature": 0.6}
+            }
+            
+            # stream=True 옵션으로 서버 연결
+            response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
+            
+            if response.status_code == 200:
+                # 구글 서버에서 실시간으로 쪼개져서 들어오는 가공되지 않은 텍스트 데이터를 한 줄씩 읽습니다.
+                for line in response.iter_lines():
+                    if line:
+                        decoded_line = line.decode('utf-8').strip()
+                        if decoded_line.startswith('"text":'):
+                            # 줄 단위 데이터에서 텍스트 조각만 발라내기
+                            chunk = decoded_line.split('"text":')[1].strip().strip('"').replace('\\n', '\n').replace('\\"', '"')
+                            full_response += chunk
+                            # 발라낸 텍스트 조각을 화면에 즉시 타자 치듯 업데이트
+                            message_placeholder.markdown(full_response + "▌")
                 
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={TEACHER_API_KEY}"
-                
-                headers = {"Content-Type": "application/json"}
-                payload = {
-                    "contents": [{"parts": [{"text": user_input}]}],
-                    "systemInstruction": {"parts": [{"text": confucius_prompt}]},
-                    "generationConfig": {"temperature": 0.6}
-                }
-                
-                response = requests.post(url, headers=headers, json=payload, verify=False)
-                
-                if response.status_code == 200:
-                    response_data = response.json()
-                    ai_text = response_data['candidates'][0]['content']['parts'][0]['text']
-                    st.write(ai_text)
-                    st.session_state.messages.append({"role": "assistant", "content": ai_text})
-                    st.rerun() # 예시 버튼 클릭 시 화면 갱신을 위해 추가
-                else:
-                    st.error("스승님과의 연결이 잠시 원활하지 않습니다. (API 키를 확인해 주세요!)")
-                
-            except Exception as e:
-                st.error(f"오류가 발생했습니다: {e}")
+                # 타자 치기가 끝나면 커서(▌)를 지우고 깔끔하게 텍스트만 고정
+                message_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                if preset_query:
+                    st.rerun() # 예시 버튼 클릭 시 대화 흐름 정리를 위해 화면 새로고침
+            else:
+                st.error("스승님과의 연결이 잠시 원활하지 않습니다. 스트림릿 관리자 화면에서 Secrets 설정을 확인해 주세요!")
+            
+        except Exception as e:
+            st.error(f"오류가 발생했습니다: {e}")
