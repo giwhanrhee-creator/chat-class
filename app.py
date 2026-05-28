@@ -1,20 +1,14 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.title("연결 상태 점검")
+st.title("사용 가능한 모델 목록 확인")
 
-if st.button("구글과 연결 테스트 시작"):
+if st.button("내 API 키가 허용하는 모델 목록 불러오기"):
     try:
-        # Secrets에서 키를 가져오는지 확인
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        st.write("1. Secrets에서 키를 불러오는 데 성공했습니다.")
-        
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.0-pro")
-        
-        st.write("2. 구글 AI 모델에 연결 중...")
-        response = model.generate_content("안녕? 연결되었니?")
-        
-        st.success(f"3. 성공! 답변: {response.text}")
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+        # 허용된 모든 모델을 가져와서 이름만 출력
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        st.write("사용 가능한 모델 목록:")
+        st.write(models)
     except Exception as e:
-        st.error(f"❌ 실패! 원인: {e}")
+        st.error(f"오류: {e}")
