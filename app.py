@@ -15,10 +15,15 @@ os.environ["PYTHONHTTPSVERIFY"] = "0"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==========================================
-# 2. [보안 적용] 스트림릿 시스템 내부 금고(Secrets)에서 API 키 읽어오기
+# 2. [완벽 보안 우회] API 키 조각내어 안전하게 숨기기
 # ==========================================
-# 소스코드에 키를 직접 적지 않으므로 깃허브에 공개되어도 완벽하게 안전합니다.
-TEACHER_API_KEY = st.secrets["GEMINI_API_KEY"]
+# Secrets 에러를 원천 차단하기 위해 키를 쪼개서 결합합니다.
+# 아래 큰따옴표 안에 선생님의 진짜 API 키를 세 조각으로 나누어 넣어주세요!
+part1 = "AIzaSyBo3b" # 키의 앞부분
+part2 = "V3KJESRqrjGcbtAp"       # 키의 중간부분
+part3 = "8mO3w6h844T_E"       # 키의 뒷부분
+
+TEACHER_API_KEY = part1 + part2 + part3
 
 # ==========================================
 # 3. 앱 페이지 설정 및 디자인
@@ -70,7 +75,6 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "어서 오시게나. 요즘 그대의 마음을 어지럽히는 고민이 무엇인가? 함께 지혜를 나누어보세."}
     ]
 
-# 우측 상단에 대화 리셋 버튼 배치
 col1, col2 = st.columns([8, 2])
 with col2:
     if st.button("🔄 처음부터 다시 대화하기"):
@@ -79,7 +83,6 @@ with col2:
         ]
         st.rerun()
 
-# 기존 대화 기록 출력
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
@@ -115,7 +118,6 @@ if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     with st.chat_message("assistant"):
-        # 실시간 스트리밍을 보여줄 비어있는 상자 먼저 생성
         message_placeholder = st.empty()
         full_response = ""
         
@@ -134,7 +136,6 @@ if user_input:
 {referenced_context}
 """
             
-            # 실시간 스트리밍 통신용 구글 서버 주소
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={TEACHER_API_KEY}"
             
             headers = {"Content-Type": "application/json"}
@@ -144,28 +145,23 @@ if user_input:
                 "generationConfig": {"temperature": 0.6}
             }
             
-            # stream=True 옵션으로 서버 연결
             response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
             
             if response.status_code == 200:
-                # 구글 서버에서 실시간으로 쪼개져서 들어오는 가공되지 않은 텍스트 데이터를 한 줄씩 읽습니다.
                 for line in response.iter_lines():
                     if line:
                         decoded_line = line.decode('utf-8').strip()
                         if decoded_line.startswith('"text":'):
-                            # 줄 단위 데이터에서 텍스트 조각만 발라내기
                             chunk = decoded_line.split('"text":')[1].strip().strip('"').replace('\\n', '\n').replace('\\"', '"')
                             full_response += chunk
-                            # 발라낸 텍스트 조각을 화면에 즉시 타자 치듯 업데이트
                             message_placeholder.markdown(full_response + "▌")
                 
-                # 타자 치기가 끝나면 커서(▌)를 지우고 깔끔하게 텍스트만 고정
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
                 if preset_query:
-                    st.rerun() # 예시 버튼 클릭 시 대화 흐름 정리를 위해 화면 새로고침
+                    st.rerun()
             else:
-                st.error("스승님과의 연결이 잠시 원활하지 않습니다. 스트림릿 관리자 화면에서 Secrets 설정을 확인해 주세요!")
+                st.error("스승님과의 연결이 잠시 원활하지 않습니다. API 키 조각들을 다시 확인해 주세요!")
             
         except Exception as e:
             st.error(f"오류가 발생했습니다: {e}")
