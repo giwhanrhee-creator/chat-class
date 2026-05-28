@@ -105,30 +105,31 @@ with btn_col3:
         preset_query = "스승님, 제가 커서 무엇을 해야 할지, 제 꿈이 무엇인지 잘 모르겠어서 불안합니다."
 
 # ==========================================
-# 7. 사용자 입력 및 AI 답변 처리
+# 7. [구조 전면 수정] 사용자 입력 및 AI 답변 처리
 # ==========================================
+# 입력창을 무조건 화면 맨 아래에 고정시키기 위해 스트림릿의 표준 chat_input 구조로 통일했습니다.
 user_input = st.chat_input("공자 스승님께 여쭐 고민을 적어보세요...")
 
-# 예시 버튼을 눌렀을 때 입력 처리 방식 보완
-if preset_query and ("last_preset" not in st.session_state or st.session_state.last_preset != preset_query):
+# 예시 버튼을 눌렀다면 입력창에 친 것처럼 강제로 값을 전환합니다.
+if preset_query:
     user_input = preset_query
-    st.session_state.last_preset = preset_query
 
+# 입력이 들어왔을 때만 실행되는 안전 구역입니다.
 if user_input:
-    # 중복 입력 방지를 위해 직전 입력값과 다를 때만 대화 기록에 추가
-    if not st.session_state.messages or st.session_state.messages[-1]["content"] != user_input:
-        with st.chat_message("user"):
-            st.write(user_input)
-        st.session_state.messages.append({"role": "user", "content": user_input})
+    # 1. 화면에 제자의 고민 즉시 표시 및 저장
+    with st.chat_message("user"):
+        st.write(user_input)
+    st.session_state.messages.append({"role": "user", "content": user_input})
 
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
+    # 2. 공자 스승님의 답변 영역 생성
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+        
+        try:
+            referenced_context = find_relevant_context(user_input, 논어_지식고)
             
-            try:
-                referenced_context = find_relevant_context(user_input, 논어_지식고)
-                
-                confucius_prompt = f"""
+            confucius_prompt = f"""
 너는 유교의 창시자 '공자(孔子)'이다. 사용자는 가르침을 구하는 중학교 제자(청소년)이다.
 [대화 규칙]
 1. 말투: 매우 정중하고, 온화하며, 자애로운 스승의 어조(~이지요, ~해보는 것은 어떻겠습니까?, 대견합니다)를 쓴다.
@@ -139,32 +140,37 @@ if user_input:
 [참고 논어 구절]
 {referenced_context}
 """
+            
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={TEACHER_API_KEY}"
+            
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [{"parts": [{"text": user_input}]}],
+                "systemInstruction": {"parts": [{"text": confucius_prompt}]},
+                "generationConfig": {"temperature": 0.6}
+            }
+            
+            # 실시간 글자 받아오기 시작
+            response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
+            
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        decoded_line = line.decode('utf-8').strip()
+                        if decoded_line.startswith('"text":'):
+                            chunk = decoded_line.split('"text":')[1].strip().strip('"').replace('\\n', '\n').replace('\\"', '"')
+                            full_response += chunk
+                            # 타자 치는 효과 구현
+                            message_placeholder.markdown(full_response + "▌")
                 
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={TEACHER_API_KEY}"
+                # 최종 텍스트 고정 및 저장
+                message_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
                 
-                headers = {"Content-Type": "application/json"}
-                payload = {
-                    "contents": [{"parts": [{"text": user_input}]}],
-                    "systemInstruction": {"parts": [{"text": confucius_prompt}]},
-                    "generationConfig": {"temperature": 0.6}
-                }
-                
-                response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
-                
-                if response.status_code == 200:
-                    for line in response.iter_lines():
-                        if line:
-                            decoded_line = line.decode('utf-8').strip()
-                            if decoded_line.startswith('"text":'):
-                                chunk = decoded_line.split('"text":')[1].strip().strip('"').replace('\\n', '\n').replace('\\"', '"')
-                                full_response += chunk
-                                message_placeholder.markdown(full_response + "▌")
-                    
-                    message_placeholder.markdown(full_response)
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
-                    # 무한 새로고침을 유발하던 st.rerun()을 제거하고 시스템이 자연스럽게 화면을 유지하도록 수정했습니다.
-                else:
-                    st.error("스승님과의 연결이 원활하지 않습니다. API 키 조각과 공백 여부를 다시 확인해 주세요!")
-                
-            except Exception as e:
-                st.error(f"오류가 발생했습니다: {e}")
+                # 버튼으로 입력했을 때 생기는 중복 작동 방지를 위해 화면 새로고침 한 번만 실행
+                st.rerun()
+            else:
+                st.error("스승님과의 연결이 원활하지 않습니다. API 키 조각과 공백 여부를 다시 확인해 주세요!")
+            
+        except Exception as e:
+            st.error(f"오류가 발생했습니다: {e}")
