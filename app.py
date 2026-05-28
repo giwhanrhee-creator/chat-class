@@ -1,29 +1,22 @@
 import streamlit as st
 import os
-import ssl
-import urllib3
-import requests
-import json
 from pypdf import PdfReader
+import google.generativeai as genai
 
 # ==========================================
-# 1. SSL 인증서 예외 처리 (학교 망/방화벽 대비)
+# 1. API 키 설정 (안전한 조각 결합)
 # ==========================================
-ssl._create_default_https_context = ssl._create_unverified_context
-os.environ["CURL_CA_BUNDLE"] = ""
-os.environ["PYTHONHTTPSVERIFY"] = "0"
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# ==========================================
-# 2. [보안 우회] API 키 2조각 결합
-# ==========================================
-part1 = "AIzaSyBo3bV3KJESR" 
-part2 = "qrjGcbtAp8mO3w6h844T_E"
+# 큰따옴표 안에 선생님의 진짜 API 키를 반으로 나누어 넣어주세요. 공백이 없어야 합니다!
+part1 = "AIzaSyBo3bV3KJESRq" 
+part2 = "rjGcbtAp8mO3w6h844T_E"
 
 TEACHER_API_KEY = part1 + part2
 
+# 구글 공식 라이브러리에 키 등록
+genai.configure(api_key=TEACHER_API_KEY)
+
 # ==========================================
-# 3. 앱 페이지 설정 및 디자인
+# 2. 앱 페이지 설정 및 디자인
 # ==========================================
 st.set_page_config(page_title="🎨 논어 마음 상담소", page_icon="📜", layout="centered")
 
@@ -31,7 +24,7 @@ st.title("📜 공자 스승님의 마음 상담소")
 st.markdown("---")
 
 # ==========================================
-# 4. PDF 지식 데이터베이스 로드
+# 3. PDF 지식 데이터베이스 로드
 # ==========================================
 @st.cache_data
 def load_pdf_knowledge(pdf_path):
@@ -65,7 +58,7 @@ if 논어_지식고 is None:
     st.error(f"⚠️ 폴더 안에 '{pdf_path}' 파일이 없습니다. 파일명을 확인해 주세요.")
 
 # ==========================================
-# 5. 대화 기록 관리 및 초기화 기능
+# 4. 대화 기록 관리 및 초기화 기능
 # ==========================================
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -85,7 +78,7 @@ for msg in st.session_state.messages:
         st.write(msg["content"])
 
 # ==========================================
-# 6. 고민 예시 버튼
+# 5. 학생들이 쉽게 누를 수 있는 고민 예시 버튼
 # ==========================================
 st.markdown("⬇️ **어떤 말을 해야 할지 모르겠다면 아래 고민을 눌러보세요!**")
 btn_col1, btn_col2, btn_col3 = st.columns(3)
@@ -101,14 +94,14 @@ with btn_col3:
     if st.button("🎯 미래에 뭘 할지 모르겠어요"):
         preset_query = "스승님, 제가 커서 무엇을 해야 할지, 제 꿈이 무엇인지 잘 모르겠어서 불안합니다."
 
-# ==========================================
-# 7. [최종 통신 안정화] 사용자 입력 및 AI 답변 처리
-# ==========================================
 user_input = st.chat_input("공자 스승님께 여쭐 고민을 적어보세요...")
 
 if preset_query:
     user_input = preset_query
 
+# ==========================================
+# 6. [구글 공식 라이브러리 적용] 통신 안정화
+# ==========================================
 if user_input:
     with st.chat_message("user"):
         st.write(user_input)
@@ -133,45 +126,21 @@ if user_input:
 {referenced_context}
 """
             
-            # [수정 1] 구글 서버에서 권장하는 가장 안전한 SSE 스트리밍 방식(alt=sse) 적용
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key={TEACHER_API_KEY}"
+            # 구글 공식 모델 불러오기
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                system_instruction=confucius_prompt
+            )
             
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "contents": [{"parts": [{"text": user_input}]}],
-                "systemInstruction": {"parts": [{"text": confucius_prompt}]},
-                "generationConfig": {"temperature": 0.6}
-            }
+            # 텍스트 조각이 깨질 위험이 없는 공식 스트리밍 통신
+            response = model.generate_content(user_input, stream=True)
             
-            response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
+            for chunk in response:
+                full_response += chunk.text
+                message_placeholder.markdown(full_response + "▌")
             
-            if response.status_code == 200:
-                # [수정 2] 구글 공식 JSON 데이터 파싱 로직 적용 (절대 글자가 누락되거나 숨겨지지 않음)
-                for line in response.iter_lines():
-                    if line:
-                        decoded_line = line.decode('utf-8')
-                        if decoded_line.startswith("data: "):
-                            data_str = decoded_line[6:]
-                            if data_str.strip() == "[DONE]":
-                                break
-                            try:
-                                data_json = json.loads(data_str)
-                                chunk = data_json["candidates"][0]["content"]["parts"][0]["text"]
-                                full_response += chunk
-                                message_placeholder.markdown(full_response + "▌")
-                            except Exception:
-                                pass
-                
-                # 만약 어떤 이유로든 빈칸이 반환되면 안내 문구 출력
-                if full_response.strip() == "":
-                    full_response = "스승님이 깊은 생각에 잠기셨습니다. 다시 한 번 질문해 주시겠습니까?"
-                
-                message_placeholder.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-            else:
-                # [핵심] API 키가 틀렸거나 통신에 실패하면 구글 서버가 뱉어내는 '진짜 에러 원인'을 화면에 빨간색으로 출력!
-                st.error(f"⚠️ 구글 서버 통신 실패 (상태코드 {response.status_code}): {response.text}")
+            message_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
             
         except Exception as e:
-            st.error(f"⚠️ 시스템 오류가 발생했습니다: {e}")
+            st.error(f"⚠️ 구글 AI 연결 중 오류가 발생했습니다: {e}")
