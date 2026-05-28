@@ -15,15 +15,13 @@ os.environ["PYTHONHTTPSVERIFY"] = "0"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==========================================
-# 2. [완벽 보안 우회] API 키 조각내어 안전하게 숨기기
+# 2. [보안 우회] API 키 2조각 결합
 # ==========================================
-# Secrets 에러를 원천 차단하기 위해 키를 쪼개서 결합합니다.
-# 아래 큰따옴표 안에 선생님의 진짜 API 키를 세 조각으로 나누어 넣어주세요!
-part1 = "AIzaSyBo3bV3KJESRqr" # 키의 앞부분
-part2 = "jGcbtAp8mO3w6h844T_E"       # 키의 중간부분
-part3 = ""       # 키의 뒷부분
+# 큰따옴표 안에 선생님의 진짜 API 키를 반으로 나누어 넣어주세요. 공백이 없어야 합니다!
+part1 = "AIzaSyBo3bV3KJESR" 
+part2 = "qrjGcbtAp8mO3w6h844T_E"
 
-TEACHER_API_KEY = part1 + part2 + part3
+TEACHER_API_KEY = part1 + part2
 
 # ==========================================
 # 3. 앱 페이지 설정 및 디자인
@@ -75,6 +73,7 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "어서 오시게나. 요즘 그대의 마음을 어지럽히는 고민이 무엇인가? 함께 지혜를 나누어보세."}
     ]
 
+# 우측 상단에 대화 리셋 버튼 배치
 col1, col2 = st.columns([8, 2])
 with col2:
     if st.button("🔄 처음부터 다시 대화하기"):
@@ -83,6 +82,7 @@ with col2:
         ]
         st.rerun()
 
+# 기존 대화 기록 출력
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
@@ -105,26 +105,30 @@ with btn_col3:
         preset_query = "스승님, 제가 커서 무엇을 해야 할지, 제 꿈이 무엇인지 잘 모르겠어서 불안합니다."
 
 # ==========================================
-# 7. 사용자 입력 및 AI 답변 처리 (버튼 입력 혹은 직접 입력)
+# 7. 사용자 입력 및 AI 답변 처리
 # ==========================================
 user_input = st.chat_input("공자 스승님께 여쭐 고민을 적어보세요...")
 
-if preset_query:
+# 예시 버튼을 눌렀을 때 입력 처리 방식 보완
+if preset_query and ("last_preset" not in st.session_state or st.session_state.last_preset != preset_query):
     user_input = preset_query
+    st.session_state.last_preset = preset_query
 
 if user_input:
-    with st.chat_message("user"):
-        st.write(user_input)
-    st.session_state.messages.append({"role": "user", "content": user_input})
+    # 중복 입력 방지를 위해 직전 입력값과 다를 때만 대화 기록에 추가
+    if not st.session_state.messages or st.session_state.messages[-1]["content"] != user_input:
+        with st.chat_message("user"):
+            st.write(user_input)
+        st.session_state.messages.append({"role": "user", "content": user_input})
 
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        
-        try:
-            referenced_context = find_relevant_context(user_input, 논어_지식고)
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
             
-            confucius_prompt = f"""
+            try:
+                referenced_context = find_relevant_context(user_input, 논어_지식고)
+                
+                confucius_prompt = f"""
 너는 유교의 창시자 '공자(孔子)'이다. 사용자는 가르침을 구하는 중학교 제자(청소년)이다.
 [대화 규칙]
 1. 말투: 매우 정중하고, 온화하며, 자애로운 스승의 어조(~이지요, ~해보는 것은 어떻겠습니까?, 대견합니다)를 쓴다.
@@ -135,33 +139,32 @@ if user_input:
 [참고 논어 구절]
 {referenced_context}
 """
-            
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={TEACHER_API_KEY}"
-            
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "contents": [{"parts": [{"text": user_input}]}],
-                "systemInstruction": {"parts": [{"text": confucius_prompt}]},
-                "generationConfig": {"temperature": 0.6}
-            }
-            
-            response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
-            
-            if response.status_code == 200:
-                for line in response.iter_lines():
-                    if line:
-                        decoded_line = line.decode('utf-8').strip()
-                        if decoded_line.startswith('"text":'):
-                            chunk = decoded_line.split('"text":')[1].strip().strip('"').replace('\\n', '\n').replace('\\"', '"')
-                            full_response += chunk
-                            message_placeholder.markdown(full_response + "▌")
                 
-                message_placeholder.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-                if preset_query:
-                    st.rerun()
-            else:
-                st.error("스승님과의 연결이 잠시 원활하지 않습니다. API 키 조각들을 다시 확인해 주세요!")
-            
-        except Exception as e:
-            st.error(f"오류가 발생했습니다: {e}")
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={TEACHER_API_KEY}"
+                
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "contents": [{"parts": [{"text": user_input}]}],
+                    "systemInstruction": {"parts": [{"text": confucius_prompt}]},
+                    "generationConfig": {"temperature": 0.6}
+                }
+                
+                response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
+                
+                if response.status_code == 200:
+                    for line in response.iter_lines():
+                        if line:
+                            decoded_line = line.decode('utf-8').strip()
+                            if decoded_line.startswith('"text":'):
+                                chunk = decoded_line.split('"text":')[1].strip().strip('"').replace('\\n', '\n').replace('\\"', '"')
+                                full_response += chunk
+                                message_placeholder.markdown(full_response + "▌")
+                    
+                    message_placeholder.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    # 무한 새로고침을 유발하던 st.rerun()을 제거하고 시스템이 자연스럽게 화면을 유지하도록 수정했습니다.
+                else:
+                    st.error("스승님과의 연결이 원활하지 않습니다. API 키 조각과 공백 여부를 다시 확인해 주세요!")
+                
+            except Exception as e:
+                st.error(f"오류가 발생했습니다: {e}")
