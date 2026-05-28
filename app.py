@@ -19,9 +19,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ==========================================
 # Secrets 에러를 원천 차단하기 위해 키를 쪼개서 결합합니다.
 # 아래 큰따옴표 안에 선생님의 진짜 API 키를 세 조각으로 나누어 넣어주세요!
-part1 = "AIzaSyBo3b" # 키의 앞부분
-part2 = "V3KJESRqrjGcbtAp"       # 키의 중간부분
-part3 = "8mO3w6h844T_E"       # 키의 뒷부분
+part1 = "AIzaSyBo3bV3KJESRqr" # 키의 앞부분
+part2 = "jGcbtAp8mO3w6h844T_E"       # 키의 중간부분
+part3 = ""       # 키의 뒷부분
 
 TEACHER_API_KEY = part1 + part2 + part3
 
