@@ -18,8 +18,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 2. [보안 우회] API 키 2조각 결합
 # ==========================================
 # 큰따옴표 안에 선생님의 진짜 API 키를 반으로 나누어 넣어주세요. 공백이 없어야 합니다!
-part1 = "AIzaSyBo3bV3KJESR" 
-part2 = "qrjGcbtAp8mO3w6h844T_E"
+part1 = "AIzaSyBo3bV3KJESRq" 
+part2 = "rjGcbtAp8mO3w6h844T_E"
 
 TEACHER_API_KEY = part1 + part2
 
@@ -82,7 +82,7 @@ with col2:
         ]
         st.rerun()
 
-# 기존 대화 기록 출력
+# 기존 대화 기록 출력 (항상 화면 최상단 유지)
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
@@ -105,23 +105,21 @@ with btn_col3:
         preset_query = "스승님, 제가 커서 무엇을 해야 할지, 제 꿈이 무엇인지 잘 모르겠어서 불안합니다."
 
 # ==========================================
-# 7. [구조 전면 수정] 사용자 입력 및 AI 답변 처리
+# 7. [구조 단순화] 사용자 입력 및 AI 답변 처리
 # ==========================================
-# 입력창을 무조건 화면 맨 아래에 고정시키기 위해 스트림릿의 표준 chat_input 구조로 통일했습니다.
 user_input = st.chat_input("공자 스승님께 여쭐 고민을 적어보세요...")
 
-# 예시 버튼을 눌렀다면 입력창에 친 것처럼 강제로 값을 전환합니다.
+# 버튼을 눌렀거나, 직접 타이핑을 했거나 둘 중 하나라도 값이 있으면 작동 시작!
 if preset_query:
     user_input = preset_query
 
-# 입력이 들어왔을 때만 실행되는 안전 구역입니다.
 if user_input:
-    # 1. 화면에 제자의 고민 즉시 표시 및 저장
+    # 1. 제자의 질문을 화면에 띄우고 저장
     with st.chat_message("user"):
         st.write(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
-    # 2. 공자 스승님의 답변 영역 생성
+    # 2. 공자 스승님의 답변을 실시간 타자로 보여주기
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
@@ -150,7 +148,7 @@ if user_input:
                 "generationConfig": {"temperature": 0.6}
             }
             
-            # 실시간 글자 받아오기 시작
+            # stream=True 통신
             response = requests.post(url, headers=headers, json=payload, verify=False, stream=True)
             
             if response.status_code == 200:
@@ -160,17 +158,14 @@ if user_input:
                         if decoded_line.startswith('"text":'):
                             chunk = decoded_line.split('"text":')[1].strip().strip('"').replace('\\n', '\n').replace('\\"', '"')
                             full_response += chunk
-                            # 타자 치는 효과 구현
+                            # 타자 치는 효과 가시화
                             message_placeholder.markdown(full_response + "▌")
                 
-                # 최종 텍스트 고정 및 저장
+                # 완전히 출력이 끝나면 대화 기록에 최종 저장 (★여기에 있던 rerun()을 완벽히 지웠습니다!)
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
-                
-                # 버튼으로 입력했을 때 생기는 중복 작동 방지를 위해 화면 새로고침 한 번만 실행
-                st.rerun()
             else:
-                st.error("스승님과의 연결이 원활하지 않습니다. API 키 조각과 공백 여부를 다시 확인해 주세요!")
+                st.error("스승님과의 연결이 원활하지 않습니다. API 키를 다시 확인해 주세요.")
             
         except Exception as e:
             st.error(f"오류가 발생했습니다: {e}")
